@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>UPI Payment Redirect</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin:0; padding:2rem; background:#f5f7fb; color:#222; display:flex; align-items:center; justify-content:center; }
+    .card { background:#fff; padding:1.5rem 2rem; border-radius:1rem; max-width:480px; width:100%; box-shadow:0 4px 16px -4px rgba(0,0,0,.15); }
+    h1 { font-size:1.2rem; margin:0 0 .75rem; display:flex; align-items:center; gap:.5rem; }
+    .upi-box { background:#f0f4ff; padding:.75rem 1rem; border-radius:.75rem; font-size:.9rem; word-break:break-all; margin:.75rem 0; }
+    a.btn { display:inline-block; background:#4f46e5; color:#fff; text-decoration:none; padding:.6rem 1rem; border-radius:.6rem; font-size:.85rem; font-weight:600; box-shadow:0 2px 6px -2px rgba(0,0,0,.3); }
+    a.btn:hover { background:#4338ca; }
+    button.copy { background:#e2e8f0; border:none; padding:.45rem .8rem; border-radius:.5rem; cursor:pointer; font-size:.7rem; margin-left:.5rem; }
+    button.copy:hover { background:#cbd5e1; }
+    .note { font-size:.65rem; opacity:.65; margin-top:1rem; line-height:1.2; }
+    .fallback { margin-top:1rem; font-size:.75rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>⚡ Opening UPI App...</h1>
+    <div id="status">If nothing happens, tap the button below</div>
+    <div class="upi-box" id="upiBox"></div>
+    <p>
+      <a id="payBtn" class="btn" href="#" rel="noopener">Pay Now (UPI)</a>
+      <button class="copy" id="copyBtn" title="Copy UPI Deep Link">COPY</button>
+    </p>
+    <div class="fallback">
+      If your UPI app does not open automatically:
+      <ol style="margin:.4rem 0 .6rem 1rem; padding:0;">
+        <li>Tap the Pay Now button again OR</li>
+        <li>Open your preferred UPI app and choose 'Scan / Enter UPI ID'</li>
+        <li>Paste the copied link OR manually enter the amount shown</li>
+      </ol>
+    </div>
+    <div class="note" id="note"></div>
+  </div>
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const pa = qs.get('pa') || '';
+    const pn = qs.get('pn') || '';
+    const am = qs.get('am') || '';
+    const tn = qs.get('tn') || '';
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent(pn)}&am=${encodeURIComponent(am)}&cu=INR&tn=${encodeURIComponent(tn)}`;
+
+    document.getElementById('upiBox').textContent = upiUrl;
+    const payBtn = document.getElementById('payBtn');
+    payBtn.href = upiUrl;
+    document.getElementById('note').textContent = `Invoice: ${tn || ''}  •  Amount: ₹${am}`;
+
+    // Attempt auto redirect
+    setTimeout(() => {
+      window.location.href = upiUrl;
+    }, 400);
+
+    // Copy handler
+    document.getElementById('copyBtn').addEventListener('click', () => {
+      navigator.clipboard.writeText(upiUrl).then(() => {
+        const prev = payBtn.textContent;
+        payBtn.textContent = 'Link Copied ✔';
+        setTimeout(()=> payBtn.textContent = prev, 1500);
+      });
+    });
+  </script>
+</body>
+</html>
