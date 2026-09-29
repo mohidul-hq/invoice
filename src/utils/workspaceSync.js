@@ -16,6 +16,7 @@ let saveInProgress = false;
 let saveQueue = Promise.resolve();
 let lastLocalSaveAt = 0;
 let lastRemoteJson = "";
+let lastKnownWorkspace = null;
 
 function githubHeaders(token, includeContentType = false) {
   return {
@@ -33,6 +34,10 @@ function normalizeWorkspace(value) {
     clients: Array.isArray(value.clients) ? value.clients : [],
     projects: Array.isArray(value.projects) ? value.projects : [],
   };
+}
+
+function sameValue(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export function loadLocalWorkspace() {
@@ -72,6 +77,7 @@ export async function loadWorkspace() {
     const remote = await readRemoteWorkspace();
     if (remote) {
       cacheWorkspace(remote);
+      lastKnownWorkspace = remote;
       return remote;
     }
     if (local.invoiceHistory.length || local.clients.length || local.projects.length) {
@@ -104,14 +110,28 @@ async function getRemoteSha(token) {
 
 async function writeWorkspace(normalized) {
   const token = getGithubToken();
-  if (!token) return { workspace: normalized, synced: false };
+  if (!token) return { workspace: normalized.workspace, synced: false };
+
+  const remote = await readRemoteWorkspace();
+  const latest = Date.now() - lastLocalSaveAt < 30000
+    ? lastKnownWorkspace || remote || EMPTY_WORKSPACE
+    : remote || lastKnownWorkspace || EMPTY_WORKSPACE;
+  const merged = {
+    invoiceHistory: normalized.changed.invoiceHistory
+      ? normalized.workspace.invoiceHistory
+      : latest.invoiceHistory,
+    clients: normalized.changed.clients ? normalized.workspace.clients : latest.clients,
+    projects: normalized.changed.projects ? normalized.workspace.projects : latest.projects,
+  };
+  const workspace = normalizeWorkspace(merged);
+  cacheWorkspace(workspace);
 
   saveInProgress = true;
   try {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const payload = {
         message: `chore: sync workspace data (${new Date().toISOString()})`,
-        content: toBase64Utf8(normalized),
+        content: toBase64Utf8(workspace),
         branch: "main",
       };
       const sha = await getRemoteSha(token);
@@ -124,8 +144,9 @@ async function writeWorkspace(normalized) {
       });
       if (response.ok) {
         lastLocalSaveAt = Date.now();
-        lastRemoteJson = JSON.stringify(normalized);
-        return { workspace: normalized, synced: true };
+        lastRemoteJson = JSON.stringify(workspace);
+        lastKnownWorkspace = workspace;
+        return { workspace, synced: true };
       }
       const body = await response.text();
       if (response.status !== 409 && response.status !== 422) {
@@ -141,8 +162,16 @@ async function writeWorkspace(normalized) {
 
 export function saveWorkspace(workspace) {
   const normalized = normalizeWorkspace(workspace);
-  cacheWorkspace(normalized);
-  const operation = saveQueue.catch(() => undefined).then(() => writeWorkspace(normalized));
+  const baseline = lastKnownWorkspace || loadLocalWorkspace();
+  const request = {
+    workspace: normalized,
+    changed: {
+      invoiceHistory: !sameValue(normalized.invoiceHistory, baseline.invoiceHistory),
+      clients: !sameValue(normalized.clients, baseline.clients),
+      projects: !sameValue(normalized.projects, baseline.projects),
+    },
+  };
+  const operation = saveQueue.catch(() => undefined).then(() => writeWorkspace(request));
   saveQueue = operation.catch(() => undefined);
   return operation;
 }
@@ -160,6 +189,7 @@ export function subscribeWorkspace(onChange, intervalMs = 15000) {
       if (serialized !== lastJson && serialized !== lastRemoteJson) {
         lastJson = serialized;
         lastRemoteJson = serialized;
+        lastKnownWorkspace = workspace;
         cacheWorkspace(workspace);
         onChange(workspace);
       }
