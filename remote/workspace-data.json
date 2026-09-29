@@ -8,7 +8,7 @@
       "clientPhone": "",
       "clientEmail": "",
       "totalAmount": 25000,
-      "receivedAmount": 0,
+      "receivedAmount": 25000,
       "itemCount": 1,
       "items": [
         {
@@ -20,8 +20,8 @@
         }
       ],
       "author": "Mohidul Haque",
-      "createdAt": "2026-09-29T11:03:12.946Z",
-      "billPaid": false
+      "createdAt": "2026-09-29T11:41:43.989Z",
+      "billPaid": true
     },
     {
       "id": "INV-2026-0929-1623",
