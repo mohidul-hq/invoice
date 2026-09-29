@@ -47,8 +47,9 @@ function SuperAdminPage() {
         `Token verified and saved for ${window.location.origin}. Invoices, clients, and projects can now sync worldwide.`
       );
     } catch (error) {
-      setGithubToken("");
-      setMessage(error instanceof Error ? error.message : "Token verification failed.");
+      setMessage(
+        `${error instanceof Error ? error.message : "Token verification failed."} The existing saved token was kept.`
+      );
     } finally {
       setChecking(false);
     }

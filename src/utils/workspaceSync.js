@@ -13,6 +13,7 @@ const EMPTY_WORKSPACE = {
 };
 
 let saveInProgress = false;
+let saveQueue = Promise.resolve();
 
 function githubHeaders(token, includeContentType = false) {
   return {
@@ -99,14 +100,9 @@ async function getRemoteSha(token) {
   return (await response.json()).sha;
 }
 
-export async function saveWorkspace(workspace) {
-  const normalized = normalizeWorkspace(workspace);
-  cacheWorkspace(normalized);
+async function writeWorkspace(normalized) {
   const token = getGithubToken();
   if (!token) return { workspace: normalized, synced: false };
-  if (saveInProgress) {
-    throw new Error("Another cloud save is still running. Please wait a moment and save again.");
-  }
 
   saveInProgress = true;
   try {
@@ -135,6 +131,14 @@ export async function saveWorkspace(workspace) {
   }
 
   throw new Error("Workspace changed on another device. Please save again.");
+}
+
+export function saveWorkspace(workspace) {
+  const normalized = normalizeWorkspace(workspace);
+  cacheWorkspace(normalized);
+  const operation = saveQueue.catch(() => undefined).then(() => writeWorkspace(normalized));
+  saveQueue = operation.catch(() => undefined);
+  return operation;
 }
 
 export function subscribeWorkspace(onChange, intervalMs = 15000) {
