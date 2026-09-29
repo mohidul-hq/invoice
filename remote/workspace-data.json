@@ -1,5 +1,29 @@
 {
-  "invoiceHistory": [],
+  "invoiceHistory": [
+    {
+      "id": "INV-2026-0929-1347",
+      "date": "29/9/2026",
+      "clientName": "sdf",
+      "clientCompany": "dfgdf",
+      "clientPhone": "",
+      "clientEmail": "",
+      "totalAmount": 30000,
+      "receivedAmount": 0,
+      "itemCount": 1,
+      "items": [
+        {
+          "icon": "⌘",
+          "description": "Backend & API integration",
+          "qty": 1,
+          "rate": 30000,
+          "hsn": "998314"
+        }
+      ],
+      "author": "Mohidul Haque",
+      "createdAt": "2026-09-29T08:21:30.644Z",
+      "billPaid": false
+    }
+  ],
   "clients": [],
   "projects": []
 }
