@@ -14,6 +14,8 @@ const EMPTY_WORKSPACE = {
 
 let saveInProgress = false;
 let saveQueue = Promise.resolve();
+let lastLocalSaveAt = 0;
+let lastRemoteJson = "";
 
 function githubHeaders(token, includeContentType = false) {
   return {
@@ -120,7 +122,11 @@ async function writeWorkspace(normalized) {
         headers: githubHeaders(token, true),
         body: JSON.stringify(payload),
       });
-      if (response.ok) return { workspace: normalized, synced: true };
+      if (response.ok) {
+        lastLocalSaveAt = Date.now();
+        lastRemoteJson = JSON.stringify(normalized);
+        return { workspace: normalized, synced: true };
+      }
       const body = await response.text();
       if (response.status !== 409 && response.status !== 422) {
         throw new Error(`Workspace cloud save failed (${response.status}): ${body}`);
@@ -146,13 +152,14 @@ export function subscribeWorkspace(onChange, intervalMs = 15000) {
   let lastJson = "";
   const tick = async () => {
     if (stopped) return;
-    if (saveInProgress) return;
+    if (saveInProgress || Date.now() - lastLocalSaveAt < 30000) return;
     try {
       const workspace = await readRemoteWorkspace();
       if (!workspace) return;
       const serialized = JSON.stringify(workspace);
-      if (serialized !== lastJson) {
+      if (serialized !== lastJson && serialized !== lastRemoteJson) {
         lastJson = serialized;
+        lastRemoteJson = serialized;
         cacheWorkspace(workspace);
         onChange(workspace);
       }

@@ -139,7 +139,7 @@ function App() {
     const updated = [record, ...invoiceHistory.filter((entry) => entry.id !== invoiceId)].slice(0, 100);
     setInvoiceHistory(updated);
     saveWorkspace({ invoiceHistory: updated, clients, projects })
-      .then(({ synced }) => setToast(synced ? "Invoice saved and synced worldwide." : "Invoice saved locally. Add a GitHub token in Super Admin to sync it worldwide."))
+      .then(({ synced }) => setToast(synced ? "Invoice saved and synced worldwide." : "Invoice saved locally. Open Super Admin and verify the GitHub token."))
       .catch((error) => {
         console.error("Unable to sync invoice", error);
         setToast(`Invoice saved locally. Cloud sync failed: ${error.message}`);
