@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import "./App.css";
+import {
+  loadLocalWorkspace,
+  loadWorkspace,
+  saveWorkspace,
+  subscribeWorkspace,
+} from "./utils/workspaceSync";
 
 const credentials = { username: "Admin_digital", password: "Mohidul" };
 const invoiceSuggestions = [
@@ -21,6 +27,13 @@ function newInvoiceId() {
   return `INV-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
+function directoryEntry(value) {
+  if (typeof value === "string") {
+    return { id: `legacy-${value}`, name: value, details: "", createdAt: "" };
+  }
+  return value;
+}
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem("digitalInvoiceAuth") === "true");
   const [auth, setAuth] = useState({ username: "", password: "" });
@@ -33,16 +46,30 @@ function App() {
   const [receivedAmount, setReceivedAmount] = useState(0);
   const [client, setClient] = useState({ name: "", email: "", phone: "", company: "", address: "" });
   const [invoiceHistory, setInvoiceHistory] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    try {
-      setInvoiceHistory(JSON.parse(localStorage.getItem("digitalInvoiceHistory") || "[]"));
-    } catch (error) {
-      console.error("Unable to load invoice history", error);
-    }
+    const local = loadLocalWorkspace();
+    setInvoiceHistory(local.invoiceHistory);
+    setClients(local.clients);
+    setProjects(local.projects);
+    let cancelled = false;
+    loadWorkspace().then((workspace) => {
+      if (cancelled) return;
+      setInvoiceHistory(workspace.invoiceHistory);
+      setClients(workspace.clients);
+      setProjects(workspace.projects);
+    });
+    const unsubscribe = subscribeWorkspace((workspace) => {
+      setInvoiceHistory(workspace.invoiceHistory);
+      setClients(workspace.clients);
+      setProjects(workspace.projects);
+    });
+    return () => { cancelled = true; unsubscribe(); };
   }, []);
 
   const subtotal = items.reduce((sum, item) => sum + Number(item.qty) * Number(item.rate), 0);
@@ -110,10 +137,50 @@ function App() {
       billPaid,
     };
     const updated = [record, ...invoiceHistory.filter((entry) => entry.id !== invoiceId)].slice(0, 100);
-    localStorage.setItem("digitalInvoiceHistory", JSON.stringify(updated));
     setInvoiceHistory(updated);
-    setToast("Invoice saved to your workspace.");
+    saveWorkspace({ invoiceHistory: updated, clients, projects })
+      .then(({ synced }) => setToast(synced ? "Invoice saved and synced worldwide." : "Invoice saved locally. Add a GitHub token in Super Admin to sync it worldwide."))
+      .catch((error) => {
+        console.error("Unable to sync invoice", error);
+        setToast("Invoice saved locally, but cloud sync failed.");
+      });
     return true;
+  };
+
+  const updateDirectory = async (type, action, entry) => {
+    const current = type === "clients" ? clients : projects;
+    const existing = current.map(directoryEntry);
+    let next;
+    if (action === "delete") {
+      next = existing.filter((item) => item.id !== entry.id);
+    } else {
+      const record = {
+        ...entry,
+        id: entry.id || `${type}-${Date.now()}`,
+        name: entry.name.trim(),
+        details: (entry.details || "").trim(),
+        updatedAt: new Date().toISOString(),
+        createdAt: entry.createdAt || new Date().toISOString(),
+      };
+      if (!record.name) return;
+      next = entry.id
+        ? existing.map((item) => item.id === entry.id ? record : item)
+        : [record, ...existing];
+      if (new Set(next.map((item) => item.name.toLowerCase())).size !== next.length) {
+        setToast(`That ${type === "clients" ? "client" : "project"} already exists.`);
+        return;
+      }
+    }
+    const workspace = { invoiceHistory, clients: type === "clients" ? next : clients, projects: type === "projects" ? next : projects };
+    if (type === "clients") setClients(next); else setProjects(next);
+    try {
+      const { synced } = await saveWorkspace(workspace);
+      const label = type === "clients" ? "Client" : "Project";
+      setToast(synced ? `${label} ${action === "delete" ? "deleted" : action === "update" ? "updated" : "added"} and synced worldwide.` : `${label} ${action === "delete" ? "deleted" : action === "update" ? "updated" : "added"} locally. Configure cloud sync in Super Admin.`);
+    } catch (error) {
+      console.error("Unable to sync directory entry", error);
+      setToast("Added locally, but cloud sync failed.");
+    }
   };
 
   const downloadPDF = () => {
@@ -192,8 +259,8 @@ function App() {
         {activeView === "overview" && <Overview invoiceHistory={invoiceHistory} paidTotal={paidTotal} outstanding={outstanding} total={total} setActiveView={setActiveView} />}
         {activeView === "invoice" && <InvoiceEditor {...{ items, newItem, setNewItem, addItem, client, setClient, invoiceId, billPaid, setBillPaid, receivedAmount: currentReceived, setReceivedAmount, subtotal, total, balanceDue, currentDate, invoiceSuggestions, resetInvoice, downloadPDF, qrCodeUrl, saveInvoice }} />}
         {activeView === "history" && <HistoryView history={filteredHistory} searchTerm={searchTerm} setSearchTerm={setSearchTerm} loadInvoice={loadInvoice} />}
-        {activeView === "clients" && <DirectoryView title="Clients" description="Keep every relationship in one place." icon="◎" history={invoiceHistory} type="clients" />}
-        {activeView === "projects" && <DirectoryView title="Projects" description="A simple view of the work behind your invoices." icon="⌘" history={invoiceHistory} type="projects" />}
+        {activeView === "clients" && <DirectoryView title="Clients" description="Keep every relationship in one place." icon="◎" values={clients} type="clients" onSave={(entry) => updateDirectory("clients", entry.id ? "update" : "create", entry)} onDelete={(entry) => updateDirectory("clients", "delete", entry)} />}
+        {activeView === "projects" && <DirectoryView title="Projects" description="A simple view of the work behind your invoices." icon="⌘" values={projects} type="projects" onSave={(entry) => updateDirectory("projects", entry.id ? "update" : "create", entry)} onDelete={(entry) => updateDirectory("projects", "delete", entry)} />}
       </main>
       {toast && <div className="toast">{toast}</div>}
     </div>
@@ -236,9 +303,28 @@ function HistoryView({ history, searchTerm, setSearchTerm, loadInvoice }) {
   return <div className="page-wrap"><div className="page-heading"><div><p className="eyebrow">BILLING / ARCHIVE</p><h1>Invoices <span>✦</span></h1><p className="muted">Every conversation, deliverable, and payment in one place.</p></div><div className="history-count">{history.length} records</div></div><div className="panel history-panel"><div className="history-toolbar"><div className="search-box">⌕<input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by client or invoice number..." /></div></div>{history.length ? <div className="history-list">{history.map((invoice) => <div className="history-card" key={invoice.id}><div className="history-card-icon">⌁</div><div className="history-card-main"><strong>{invoice.clientName}</strong><span>{invoice.id} · {invoice.date} · {invoice.itemCount} deliverable{invoice.itemCount === 1 ? "" : "s"}</span></div><strong className="history-amount">{money(invoice.totalAmount)}</strong><span className={`status ${invoice.billPaid ? "paid" : "pending"}`}>{invoice.billPaid ? "Paid" : "Pending"}</span><button className="text-button" onClick={() => loadInvoice(invoice)}>Open →</button></div>)}</div> : <EmptyState />}</div></div>;
 }
 
-function DirectoryView({ title, description, icon, history, type }) {
-  const values = [...new Set(history.map((invoice) => type === "clients" ? invoice.clientName : invoice.items?.[0]?.description).filter(Boolean))];
-  return <div className="page-wrap"><div className="page-heading"><div><p className="eyebrow">WORKSPACE / DIRECTORY</p><h1>{title} <span>{icon}</span></h1><p className="muted">{description}</p></div><button className="primary-button">＋ Add {type === "clients" ? "client" : "project"}</button></div><div className="directory-grid">{values.length ? values.map((value) => <div className="directory-card panel" key={value}><div className="directory-avatar">{value.slice(0, 2).toUpperCase()}</div><div><strong>{value}</strong><span>{type === "clients" ? "Client relationship" : "Active workstream"}</span></div><span className="row-arrow">→</span></div>) : <div className="panel directory-empty"><span>{icon}</span><h2>Your {type} will live here.</h2><p>Start by creating an invoice or adding your first record.</p></div>}</div></div>;
+function DirectoryView({ title, description, icon, values, type, onSave, onDelete }) {
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [confirming, setConfirming] = useState(null);
+  const entries = values.map(directoryEntry);
+  const filtered = entries.filter((entry) => `${entry.name} ${entry.details}`.toLowerCase().includes(query.toLowerCase()));
+  const label = type === "clients" ? "client" : "project";
+  const openNew = () => setEditing({ name: "", details: "" });
+  return <div className="page-wrap">
+    <div className="page-heading"><div><p className="eyebrow">WORKSPACE / DIRECTORY</p><h1>{title} <span>{icon}</span></h1><p className="muted">{description}</p></div><button className="primary-button" onClick={openNew}>＋ Add {label}</button></div>
+    <div className="directory-toolbar panel"><div className="search-box">⌕<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${title.toLowerCase()}...`} /></div><span className="directory-count">{filtered.length} {filtered.length === 1 ? label : `${label}s`}</span></div>
+    <div className="directory-grid">{filtered.length ? filtered.map((entry) => <div className="directory-card panel" key={entry.id}><div className="directory-avatar">{entry.name.slice(0, 2).toUpperCase()}</div><div className="directory-card-content"><strong>{entry.name}</strong><span>{entry.details || (type === "clients" ? "Client relationship" : "Active workstream")}</span></div><div className="directory-actions"><button className="icon-button small" onClick={() => setEditing(entry)} aria-label={`Edit ${entry.name}`}>✎</button><button className="icon-button small danger" onClick={() => setConfirming(entry)} aria-label={`Delete ${entry.name}`}>×</button></div></div>) : <div className="panel directory-empty"><span>{icon}</span><h2>{query ? `No ${label}s found` : `Your ${type} will live here.`}</h2><p>{query ? "Try a different search term." : `Start by adding your first ${label}.`}</p>{!query && <button className="text-button" onClick={openNew}>＋ Add {label}</button>}</div>}</div>
+    {editing && <DirectoryModal label={label} entry={editing} onClose={() => setEditing(null)} onSave={(entry) => { onSave(entry); setEditing(null); }} />}
+    {confirming && <div className="modal-backdrop"><div className="confirm-modal panel"><span className="modal-icon danger">!</span><h2>Delete {confirming.name}?</h2><p>This cannot be undone. The record will be removed from this workspace.</p><div className="modal-actions"><button className="secondary-button" onClick={() => setConfirming(null)}>Cancel</button><button className="danger-button" onClick={() => { onDelete(confirming); setConfirming(null); }}>Delete {label}</button></div></div></div>}
+  </div>;
+}
+
+function DirectoryModal({ label, entry, onClose, onSave }) {
+  const [form, setForm] = useState({ name: entry.name || "", details: entry.details || "" });
+  const isEdit = Boolean(entry.id);
+  const submit = (event) => { event.preventDefault(); onSave({ ...entry, ...form }); };
+  return <div className="modal-backdrop"><form className="directory-modal panel" onSubmit={submit}><div className="modal-header"><div><p className="eyebrow">{isEdit ? "EDIT RECORD" : "NEW RECORD"}</p><h2>{isEdit ? `Edit ${label}` : `Add ${label}`}</h2></div><button type="button" className="icon-button small" onClick={onClose} aria-label="Close">×</button></div><label>{label === "client" ? "Client name" : "Project name"}<input autoFocus value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder={label === "client" ? "e.g. Priya Sharma" : "e.g. Mobile app redesign"} required maxLength="80" /></label><label>Notes <span className="optional">(optional)</span><textarea value={form.details} onChange={(event) => setForm({ ...form, details: event.target.value })} placeholder={label === "client" ? "Company, email, or a useful note" : "Scope, status, or a useful note"} maxLength="160" rows="3" /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button className="primary-button" type="submit">{isEdit ? "Save changes" : `Add ${label}`}</button></div></form></div>;
 }
 
 export default App;
