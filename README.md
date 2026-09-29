@@ -33,3 +33,15 @@ npm run build
 ```
 
 Invoice history and the login session are stored in the browser's `localStorage`, so data is scoped to the current browser and device.
+
+Workspace data is cached in the browser's `localStorage` for offline use and can sync worldwide through `remote/workspace-data.json` on the configured GitHub repository. Configure a GitHub Personal Access Token in Super Admin before saving data that should be shared across devices. Visitors can read the published workspace data without a token.
+
+## GitHub Pages deployment
+
+The repository deploys automatically through [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml) whenever changes are pushed to `main`. In the repository settings, open **Pages** and set **Source** to **GitHub Actions**. The site is then available at:
+
+```text
+https://mohidul-hq.github.io/invoice/
+```
+
+The deployment workflow publishes the app only. Workspace sync writes data to GitHub through the Contents API, so the Super Admin must save a GitHub token with `repo` permission in the Super Admin page. GitHub Pages is static hosting; it does not provide a database or anonymous write access.
