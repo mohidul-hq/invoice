@@ -12,6 +12,17 @@ const EMPTY_WORKSPACE = {
   projects: [],
 };
 
+let saveInProgress = false;
+
+function githubHeaders(token, includeContentType = false) {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    ...(includeContentType ? { "Content-Type": "application/json" } : {}),
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
 function normalizeWorkspace(value) {
   if (!value || typeof value !== "object") return { ...EMPTY_WORKSPACE };
   return {
@@ -78,14 +89,13 @@ function toBase64Utf8(value) {
 
 async function getRemoteSha(token) {
   const response = await fetch(GITHUB_WORKSPACE_DATA_API, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
+    headers: githubHeaders(token),
   });
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Workspace sync metadata failed (${response.status})`);
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Workspace sync metadata failed (${response.status}): ${body}`);
+  }
   return (await response.json()).sha;
 }
 
@@ -94,31 +104,34 @@ export async function saveWorkspace(workspace) {
   cacheWorkspace(normalized);
   const token = getGithubToken();
   if (!token) return { workspace: normalized, synced: false };
+  if (saveInProgress) {
+    throw new Error("Another cloud save is still running. Please wait a moment and save again.");
+  }
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const payload = {
-      message: `chore: sync workspace data (${new Date().toISOString()})`,
-      content: toBase64Utf8(normalized),
-      branch: "main",
-    };
-    const sha = await getRemoteSha(token);
-    if (sha) payload.sha = sha;
+  saveInProgress = true;
+  try {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const payload = {
+        message: `chore: sync workspace data (${new Date().toISOString()})`,
+        content: toBase64Utf8(normalized),
+        branch: "main",
+      };
+      const sha = await getRemoteSha(token);
+      if (sha) payload.sha = sha;
 
-    const response = await fetch(GITHUB_WORKSPACE_DATA_API, {
-      method: "PUT",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      body: JSON.stringify(payload),
-    });
-    if (response.ok) return { workspace: normalized, synced: true };
-    if (response.status !== 409 && response.status !== 422) {
+      const response = await fetch(GITHUB_WORKSPACE_DATA_API, {
+        method: "PUT",
+        headers: githubHeaders(token, true),
+        body: JSON.stringify(payload),
+      });
+      if (response.ok) return { workspace: normalized, synced: true };
       const body = await response.text();
-      throw new Error(`Workspace cloud save failed (${response.status}): ${body}`);
+      if (response.status !== 409 && response.status !== 422) {
+        throw new Error(`Workspace cloud save failed (${response.status}): ${body}`);
+      }
     }
+  } finally {
+    saveInProgress = false;
   }
 
   throw new Error("Workspace changed on another device. Please save again.");
@@ -129,6 +142,7 @@ export function subscribeWorkspace(onChange, intervalMs = 15000) {
   let lastJson = "";
   const tick = async () => {
     if (stopped) return;
+    if (saveInProgress) return;
     try {
       const workspace = await readRemoteWorkspace();
       if (!workspace) return;

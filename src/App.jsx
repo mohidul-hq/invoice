@@ -142,7 +142,7 @@ function App() {
       .then(({ synced }) => setToast(synced ? "Invoice saved and synced worldwide." : "Invoice saved locally. Add a GitHub token in Super Admin to sync it worldwide."))
       .catch((error) => {
         console.error("Unable to sync invoice", error);
-        setToast("Invoice saved locally, but cloud sync failed.");
+        setToast(`Invoice saved locally. Cloud sync failed: ${error.message}`);
       });
     return true;
   };
@@ -179,7 +179,7 @@ function App() {
       setToast(synced ? `${label} ${action === "delete" ? "deleted" : action === "update" ? "updated" : "added"} and synced worldwide.` : `${label} ${action === "delete" ? "deleted" : action === "update" ? "updated" : "added"} locally. Configure cloud sync in Super Admin.`);
     } catch (error) {
       console.error("Unable to sync directory entry", error);
-      setToast("Added locally, but cloud sync failed.");
+      setToast(`Saved locally. Cloud sync failed: ${error.message}`);
     }
   };
 
