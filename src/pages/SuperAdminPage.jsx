@@ -18,6 +18,7 @@ import {
   saveRemoteTrialLockConfig,
   setGithubToken,
   subscribeTrialLockConfig,
+  validateGithubToken,
 } from "../utils/remoteTrialLock";
 
 function SuperAdminPage() {
@@ -130,13 +131,28 @@ function SuperAdminPage() {
     setSaveMessage("");
   };
 
-  const handleSaveToken = () => {
-    setGithubToken(githubTokenInput);
-    setSaveMessage(
-      githubTokenInput.trim()
-        ? "GitHub token saved on this device. You can now publish lock changes worldwide."
-        : "GitHub token cleared."
-    );
+  const handleSaveToken = async () => {
+    if (!githubTokenInput.trim()) {
+      setGithubToken("");
+      setSaveMessage("GitHub token cleared.");
+      return;
+    }
+
+    setSaveMessage("Checking GitHub token and repository access…");
+    try {
+      await validateGithubToken(githubTokenInput);
+      setGithubToken(githubTokenInput);
+      setSaveMessage(
+        `GitHub token verified and saved for ${window.location.origin}. Workspace changes can now sync worldwide.`
+      );
+    } catch (error) {
+      setGithubToken("");
+      setSaveMessage(
+        error instanceof Error
+          ? error.message
+          : "GitHub token verification failed."
+      );
+    }
   };
 
   const persist = async (next) => {

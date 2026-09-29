@@ -45,3 +45,5 @@ https://mohidul-hq.github.io/invoice/
 ```
 
 The deployment workflow publishes the app only. Workspace sync writes data to GitHub through the Contents API, so the Super Admin must save a GitHub token with `repo` permission in the Super Admin page. GitHub Pages is static hosting; it does not provide a database or anonymous write access.
+
+The token is stored separately for each website origin. Save it while using the exact deployed address you use for the app (for example `http://mohidul-hq.me/invoice/`); saving it on `github.io` does not make it available on the custom domain.

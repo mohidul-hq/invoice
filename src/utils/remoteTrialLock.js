@@ -105,6 +105,33 @@ export function setGithubToken(token) {
   }
 }
 
+export async function validateGithubToken(token) {
+  const trimmed = (token || "").trim();
+  if (!trimmed) throw new Error("Enter a GitHub Personal Access Token first.");
+
+  const response = await fetch(
+    `${GITHUB_CONTENTS_API_MAIN}?ref=${encodeURIComponent(GITHUB_BRANCH_MAIN)}`,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${trimmed}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    }
+  );
+
+  if (response.status === 401) {
+    throw new Error("GitHub rejected this token. Check that it is copied correctly.");
+  }
+  if (response.status === 403) {
+    throw new Error("This token cannot access the invoice repository. Grant it repository contents write access.");
+  }
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`GitHub token check failed (${response.status}).`);
+  }
+  return true;
+}
+
 async function getRemoteFileMeta(apiUrl, branch, token) {
   const res = await fetch(`${apiUrl}?ref=${encodeURIComponent(branch)}`, {
     headers: {
