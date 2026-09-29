@@ -7,6 +7,8 @@ import {
   GITHUB_BRANCH_PAGES,
   GITHUB_CONTENTS_API_MAIN,
   GITHUB_CONTENTS_API_PAGES,
+  GITHUB_OWNER,
+  GITHUB_REPO,
   GITHUB_TOKEN_STORAGE_KEY,
   REMOTE_POLL_INTERVAL_MS,
   REMOTE_RAW_URL,
@@ -110,7 +112,7 @@ export async function validateGithubToken(token) {
   if (!trimmed) throw new Error("Enter a GitHub Personal Access Token first.");
 
   const response = await fetch(
-    `${GITHUB_CONTENTS_API_MAIN}?ref=${encodeURIComponent(GITHUB_BRANCH_MAIN)}`,
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}`,
     {
       headers: {
         Accept: "application/vnd.github+json",
@@ -126,8 +128,12 @@ export async function validateGithubToken(token) {
   if (response.status === 403) {
     throw new Error("This token cannot access the invoice repository. Grant it repository contents write access.");
   }
-  if (!response.ok && response.status !== 404) {
+  if (!response.ok) {
     throw new Error(`GitHub token check failed (${response.status}).`);
+  }
+  const repository = await response.json();
+  if (!repository.permissions?.push) {
+    throw new Error("This token can read the repository but cannot write its contents.");
   }
   return true;
 }

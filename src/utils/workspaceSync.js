@@ -40,7 +40,6 @@ export function loadLocalWorkspace() {
 
 function cacheWorkspace(workspace) {
   localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
-  // Keep the legacy key readable for existing local data and older builds.
   localStorage.setItem("digitalInvoiceHistory", JSON.stringify(workspace.invoiceHistory));
 }
 
@@ -96,29 +95,33 @@ export async function saveWorkspace(workspace) {
   const token = getGithubToken();
   if (!token) return { workspace: normalized, synced: false };
 
-  const payload = {
-    message: `chore: sync workspace data (${new Date().toISOString()})`,
-    content: toBase64Utf8(normalized),
-    branch: "main",
-  };
-  const sha = await getRemoteSha(token);
-  if (sha) payload.sha = sha;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const payload = {
+      message: `chore: sync workspace data (${new Date().toISOString()})`,
+      content: toBase64Utf8(normalized),
+      branch: "main",
+    };
+    const sha = await getRemoteSha(token);
+    if (sha) payload.sha = sha;
 
-  const response = await fetch(GITHUB_WORKSPACE_DATA_API, {
-    method: "PUT",
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Workspace cloud save failed (${response.status}): ${body}`);
+    const response = await fetch(GITHUB_WORKSPACE_DATA_API, {
+      method: "PUT",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (response.ok) return { workspace: normalized, synced: true };
+    if (response.status !== 409 && response.status !== 422) {
+      const body = await response.text();
+      throw new Error(`Workspace cloud save failed (${response.status}): ${body}`);
+    }
   }
-  return { workspace: normalized, synced: true };
+
+  throw new Error("Workspace changed on another device. Please save again.");
 }
 
 export function subscribeWorkspace(onChange, intervalMs = 15000) {
